@@ -1,0 +1,6 @@
+let tm = tm1640.create(DigitalPin.P1, DigitalPin.P2, 5)
+tm.showInteger(123)
+basic.pause(1000)
+tm.showFloat1(-12.3)
+basic.pause(1000)
+tm.setBrightness(7)
