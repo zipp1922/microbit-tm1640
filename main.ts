@@ -52,8 +52,8 @@ namespace tm1640 {
     //% blockId="tm1640_init"
     //% block="init TM1640 CLK %clk DIO %dio brightness %b"
     //% group="Setup" weight=90 blockGap=8
-    //% clk.defl=DigitalPin.P1 dio.defl=DigitalPin.P2
-    //% b.shadow="number" b.min=0 b.max=7 b.defl=5
+    //% clk.defl=DigitalPin.P2 dio.defl=DigitalPin.P1
+    //% b.shadow="math_number" b.min=0 b.max=7 b.defl=5
     export function init(clk: DigitalPin, dio: DigitalPin, b: number = 5) {
         drv = new Driver(clk, dio, b)
     }
@@ -75,7 +75,7 @@ namespace tm1640 {
     //% blockId="tm1640_showInt"
     //% block="TM1640 show integer %num"
     //% group="Display" weight=70 blockGap=8
-    //% num.shadow="number"
+    //% num.shadow="math_number"
     export function showInteger(num: number) {
         if (!drv) return
         num = Math.floor(num)
@@ -93,7 +93,7 @@ namespace tm1640 {
     //% blockId="tm1640_showFloat1"
     //% block="TM1640 show number %num with 1 decimal"
     //% group="Display" weight=60
-    //% num.shadow="number"
+    //% num.shadow="math_number"
     export function showFloat1(num: number) {
         if (!drv) return
         let n10 = Math.round(num * 10)
