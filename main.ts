@@ -6,7 +6,7 @@ namespace tm1640 {
     const CMD2 = 0xC0
     const CMD3 = 0x80
     const DSP_ON = 0x08
-    const DEL = 2 // ~2us
+    const DEL = 2 // ~2µs
 
     const FONT: { [k: string]: number } = {
         "0": 0x3f, "1": 0x06, "2": 0x5b, "3": 0x4f, "4": 0x66,
@@ -14,21 +14,31 @@ namespace tm1640 {
         "-": 0x40, " ": 0x00
     }
 
-    // ----- внутренний драйвер (без блоков) -----
     class Driver {
-        private b: number
-        constructor(private clk: DigitalPin, private dio: DigitalPin, brightness: number) {
-            this.b = Math.min(7, Math.max(0, (brightness | 0)))
+        private brightness: number
+        private enabled: boolean = true
+        constructor(private clk: DigitalPin, private dio: DigitalPin, b: number) {
+            this.brightness = Math.min(7, Math.max(0, b | 0))
             pins.digitalWritePin(this.clk, 0)
             pins.digitalWritePin(this.dio, 0)
             control.waitMicros(DEL)
             this.dataCmd()
             this.dspCtrl()
         }
+
         private D(n: number) { pins.digitalWritePin(this.dio, n ? 1 : 0) }
         private C(n: number) { pins.digitalWritePin(this.clk, n ? 1 : 0) }
-        private start() { this.D(0); control.waitMicros(DEL); this.C(0); control.waitMicros(DEL) }
-        private stop() { this.D(0); control.waitMicros(DEL); this.C(1); control.waitMicros(DEL); this.D(1); control.waitMicros(DEL) }
+
+        private start() {
+            this.D(0); control.waitMicros(DEL)
+            this.C(0); control.waitMicros(DEL)
+        }
+        private stop() {
+            this.D(0); control.waitMicros(DEL)
+            this.C(1); control.waitMicros(DEL)
+            this.D(1); control.waitMicros(DEL)
+        }
+
         private byte(b: number) {
             for (let i = 0; i < 8; i++) {
                 this.D((b >> i) & 1)
@@ -39,8 +49,16 @@ namespace tm1640 {
                 control.waitMicros(DEL)
             }
         }
+
         private dataCmd() { this.start(); this.byte(CMD1); this.stop() }
-        private dspCtrl() { this.start(); this.byte(CMD3 | DSP_ON | this.b); this.stop() }
+
+        private dspCtrl() {
+            const onFlag = this.enabled ? DSP_ON : 0x00
+            this.start()
+            this.byte(CMD3 | onFlag | this.brightness)
+            this.stop()
+        }
+
         write(rows: number[], pos: number = 0) {
             this.dataCmd()
             this.start()
@@ -49,20 +67,31 @@ namespace tm1640 {
             this.stop()
             this.dspCtrl()
         }
+
         setBrightness(v: number) {
-            this.b = Math.min(7, Math.max(0, (v | 0)))
+            this.brightness = Math.min(7, Math.max(0, v | 0))
             this.dataCmd()
             this.dspCtrl()
         }
+
+        setPower(state: boolean) {
+            this.enabled = state
+            this.dspCtrl()
+        }
+
+        clear() {
+            const zeros: number[] = [0, 0, 0, 0]
+            this.write(zeros, 0)
+        }
     }
 
-    // singleton-драйвер (как у StartbitV2-подхода)
+    // singleton
     let drv: Driver = null
 
-    // ---------- БЛОКИ (top-level) ----------
+    // ---------- БЛОКИ ----------
 
     /**
-     * Инициализировать TM1640: указать выводы CLK/DIO и яркость 0..7
+     * Инициализация TM1640 (CLK, DIO, яркость)
      */
     //% blockId="tm1640_init"
     //% block="init TM1640 CLK %clk DIO %dio brightness %b"
@@ -78,14 +107,44 @@ namespace tm1640 {
      */
     //% blockId="tm1640_brightness"
     //% block="TM1640 set brightness %val"
-    //% group="Setup" weight=80 blockGap=12
+    //% group="Setup" weight=80 blockGap=8
     //% val.shadow="math_number" val.min=0 val.max=7 val.defl=5
     export function setBrightness(val: number) {
         if (drv) drv.setBrightness(val)
     }
 
     /**
-     * Показать целое число (до 4 разрядов). Выравнивание вправо.
+     * Включить дисплей
+     */
+    //% blockId="tm1640_on"
+    //% block="TM1640 display ON"
+    //% group="Setup" weight=79 blockGap=8
+    export function displayOn() {
+        if (drv) drv.setPower(true)
+    }
+
+    /**
+     * Выключить дисплей
+     */
+    //% blockId="tm1640_off"
+    //% block="TM1640 display OFF"
+    //% group="Setup" weight=78 blockGap=16
+    export function displayOff() {
+        if (drv) drv.setPower(false)
+    }
+
+    /**
+     * Очистить дисплей (все сегменты гаснут)
+     */
+    //% blockId="tm1640_clear"
+    //% block="TM1640 clear display"
+    //% group="Display" weight=75 blockGap=12
+    export function clear() {
+        if (drv) drv.clear()
+    }
+
+    /**
+     * Показать целое число (до 4 цифр)
      */
     //% blockId="tm1640_showInt"
     //% block="TM1640 show integer %num"
@@ -97,13 +156,13 @@ namespace tm1640 {
         let s = num.toString()
         if (s.length > 4) s = s.slice(0, 4)
         let buf: number[] = []
-        for (let i = 0; i < s.length; i++) buf.push(FONT[s.charAt(i)] || 0)
+        for (let c of s) buf.push(FONT[c] || 0)
         while (buf.length < 4) buf.unshift(0)
-        drv.write(buf.slice(0, 4), 0)
+        drv.write(buf, 0)
     }
 
     /**
-     * Показать число с 1 знаком после точки (например, -12.3)
+     * Показать число с 1 десятичным знаком
      */
     //% blockId="tm1640_showFloat1"
     //% block="TM1640 show number %num with 1 decimal"
@@ -111,17 +170,15 @@ namespace tm1640 {
     //% num.shadow="math_number"
     export function showFloat1(num: number) {
         if (!drv) return
-        // округление до 0.1 без toFixed()
         let n10 = Math.round(num * 10)
         let ip = Math.idiv(n10, 10)
         let fp = Math.abs(n10 % 10)
 
-        // сегменты: целая часть + точка + дробная цифра
         let segs: number[] = []
         let s = ip.toString()
-        for (let i = 0; i < s.length; i++) segs.push(FONT[s.charAt(i)] || 0)
+        for (let c of s) segs.push(FONT[c] || 0)
         if (segs.length === 0) segs.push(0)
-        segs[segs.length - 1] |= 0x80 // десятичная точка
+        segs[segs.length - 1] |= 0x80 // точка
         segs.push(FONT[fp.toString()] || 0)
 
         while (segs.length < 4) segs.unshift(0)
