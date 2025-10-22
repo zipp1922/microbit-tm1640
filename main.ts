@@ -86,6 +86,7 @@ namespace tm1640 {
         refresh() { this.write(this.gram, 0) }
 
         //% block="show integer %num"
+        //% num.shadow="number"
         //% weight=70
         showInteger(num: number) {
             let s = (Math.floor(num)).toString()
@@ -97,8 +98,9 @@ namespace tm1640 {
             this.refresh()
         }
 
-        //% block="show number %num with 1 decimal"
-        //% weight=65
+        //% block="show integer %num"
+        //% num.shadow="number"
+        //% weight=70
         showFloat1(num: number) {
             let n10 = Math.round(num * 10)
             let intPart = Math.idiv(n10, 10)
