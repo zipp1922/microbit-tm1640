@@ -1,4 +1,4 @@
-// tm1640 driver for micro:bit
+// TM1640 driver for micro:bit (MakeCode)
 // MIT License
 
 //% weight=90 color=#0EA5E9 icon="\uf26c"
@@ -15,6 +15,9 @@ namespace tm1640 {
         '5': 0x6d, '6': 0x7d, '7': 0x07, '8': 0x7f, '9': 0x6f,
         '-': 0x40, ' ': 0x00
     }
+
+    // Глобальный дисплей для «простых» блоков
+    let _disp: Display = null
 
     export class Display {
         private clk_p: DigitalPin
@@ -61,19 +64,7 @@ namespace tm1640 {
         private _write_dsp_ctrl() {
             this._start(); this._write_byte(TM1640_CMD3 | TM1640_DSP_ON | this._brightness); this._stop()
         }
-
-        //% block="set brightness %value"
-        //% value.min=0 value.max=7 value.defl=5
-        //% weight=80
-        setBrightness(value: number) {
-            value = Math.max(0, Math.min(7, value | 0))
-            this._brightness = value
-            this._write_data_cmd()
-            this._write_dsp_ctrl()
-        }
-
-        // низкоуровневая запись
-        write(rows: number[], pos: number = 0) {
+        private write(rows: number[], pos: number = 0) {
             if (pos < 0 || pos > 16) return
             this._write_data_cmd()
             this._start()
@@ -82,8 +73,19 @@ namespace tm1640 {
             this._stop()
             this._write_dsp_ctrl()
         }
+        private refresh() { this.write(this.gram, 0) }
 
-        refresh() { this.write(this.gram, 0) }
+        // -------- Блоки как методы объекта --------
+
+        //% block="set brightness %value"
+        //% value.shadow="number" value.min=0 value.max=7 value.defl=5
+        //% weight=80
+        setBrightness(value: number) {
+            value = Math.max(0, Math.min(7, value | 0))
+            this._brightness = value
+            this._write_data_cmd()
+            this._write_dsp_ctrl()
+        }
 
         //% block="show integer %num"
         //% num.shadow="number"
@@ -98,14 +100,15 @@ namespace tm1640 {
             this.refresh()
         }
 
-        //% block="show float %num"
+        //% block="show number %num with 1 decimal"
         //% num.shadow="number"
-        //% weight=70
+        //% weight=65
         showFloat1(num: number) {
             let n10 = Math.round(num * 10)
             let intPart = Math.idiv(n10, 10)
             let fracPart = Math.abs(n10 % 10)
-            let s = intPart.toString() + "." + fracPart.toString()
+            let s = intPart.toString() + "."
+                + fracPart.toString()
             let buf: number[] = []
             for (let i = 0; i < s.length; i++) {
                 let c = s.charAt(i)
@@ -122,13 +125,48 @@ namespace tm1640 {
         }
     }
 
+    // -------- Простой режим: блоки без переменной --------
+
     /**
-     * Создать дисплей TM1640
+     * Создать/переинициализировать глобальный TM1640 для простых блоков
+     */
+    //% block="init TM1640 CLK %clk DIO %dio brightness %b"
+    //% clk.defl=DigitalPin.P1 dio.defl=DigitalPin.P2 b.shadow="number" b.min=0 b.max=7 b.defl=5
+    //% weight=90
+    export function init(clk: DigitalPin, dio: DigitalPin, b: number = 5) {
+        _disp = new Display(clk, dio, b)
+    }
+
+    //% block="TM1640 set brightness %value"
+    //% value.shadow="number" value.min=0 value.max=7 value.defl=5
+    //% weight=75
+    export function setBrightness(value: number) {
+        if (_disp) _disp.setBrightness(value)
+    }
+
+    //% block="TM1640 show integer %num"
+    //% num.shadow="number"
+    //% weight=70
+    export function showInteger(num: number) {
+        if (_disp) _disp.showInteger(num)
+    }
+
+    //% block="TM1640 show number %num with 1 decimal"
+    //% num.shadow="number"
+    //% weight=65
+    export function showFloat1(num: number) {
+        if (_disp) _disp.showFloat1(num)
+    }
+
+    /**
+     * Создать новый объект и сохранить в переменную (объектный стиль)
      */
     //% block="TM1640 on CLK %clk DIO %dio brightness %b"
-    //% clk.defl=DigitalPin.P1 dio.defl=DigitalPin.P2 b.min=0 b.max=7 b.defl=5
-    //% weight=90 blockSetVariable=tm1640
+    //% clk.defl=DigitalPin.P1 dio.defl=DigitalPin.P2 b.shadow="number" b.min=0 b.max=7 b.defl=5
+    //% weight=88 blockSetVariable=tm1640
     export function create(clk: DigitalPin, dio: DigitalPin, b: number = 5): Display {
-        return new Display(clk, dio, b)
+        let d = new Display(clk, dio, b)
+        _disp = d
+        return d
     }
 }
