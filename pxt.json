@@ -1,6 +1,6 @@
 {
   "name": "tm1640",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "TM1640 4-digit display for micro:bit",
   "license": "MIT",
   "public": true,
