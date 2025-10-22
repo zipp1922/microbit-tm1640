@@ -1,6 +1,6 @@
 {
   "name": "tm1640",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "TM1640 4-digit/LED driver for micro:bit",
   "license": "MIT",
   "dependencies": {
