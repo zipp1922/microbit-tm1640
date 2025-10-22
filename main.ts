@@ -1,172 +1,112 @@
-// TM1640 driver for micro:bit (MakeCode)
-// MIT License
-
-//% weight=90 color=#0EA5E9 icon="\uf26c"
+//% color=#0EA5E9 icon="\uf26c" weight=90
 //% block="TM1640"
+//% groups='["Setup","Display"]'
 namespace tm1640 {
-    const TM1640_CMD1 = 0x40
-    const TM1640_CMD2 = 0xC0
-    const TM1640_CMD3 = 0x80
-    const TM1640_DSP_ON = 0x08
-    const TM1640_DELAY = 2
-
-    const font: { [k: string]: number } = {
-        '0': 0x3f, '1': 0x06, '2': 0x5b, '3': 0x4f, '4': 0x66,
-        '5': 0x6d, '6': 0x7d, '7': 0x07, '8': 0x7f, '9': 0x6f,
-        '-': 0x40, ' ': 0x00
+    const CMD1 = 0x40, CMD2 = 0xC0, CMD3 = 0x80, DSP_ON = 0x08
+    const DEL = 2
+    const FONT: {[k:string]:number} = {
+        "0":0x3f,"1":0x06,"2":0x5b,"3":0x4f,"4":0x66,
+        "5":0x6d,"6":0x7d,"7":0x07,"8":0x7f,"9":0x6f,
+        "-":0x40," ":0x00
     }
 
-    // Глобальный дисплей для «простых» блоков
-    let _disp: Display = null
-
-    export class Display {
-        private clk_p: DigitalPin
-        private dio_p: DigitalPin
-        private _brightness: number
-        private gram: number[] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-
-        constructor(clk: DigitalPin, dio: DigitalPin, brightness: number) {
-            this.clk_p = clk
-            this.dio_p = dio
-            this._brightness = Math.max(0, Math.min(7, brightness | 0))
-            pins.digitalWritePin(this.clk_p, 0)
-            pins.digitalWritePin(this.dio_p, 0)
-            control.waitMicros(TM1640_DELAY)
-            this._write_data_cmd()
-            this._write_dsp_ctrl()
+    // внутренний драйвер без блоков
+    class Driver {
+        constructor(private clk: DigitalPin, private dio: DigitalPin, private b: number) {
+            if (this.b < 0) this.b = 0
+            if (this.b > 7) this.b = 7
+            pins.digitalWritePin(this.clk, 0)
+            pins.digitalWritePin(this.dio, 0)
+            control.waitMicros(DEL)
+            this.dataCmd(); this.dspCtrl()
         }
-
-        private dio(n: number) { pins.digitalWritePin(this.dio_p, n ? 1 : 0) }
-        private clk(n: number) { pins.digitalWritePin(this.clk_p, n ? 1 : 0) }
-
-        private _start() {
-            this.dio(0); control.waitMicros(TM1640_DELAY)
-            this.clk(0); control.waitMicros(TM1640_DELAY)
-        }
-        private _stop() {
-            this.dio(0); control.waitMicros(TM1640_DELAY)
-            this.clk(1); control.waitMicros(TM1640_DELAY)
-            this.dio(1); control.waitMicros(TM1640_DELAY)
-        }
-        private _write_byte(b: number) {
-            for (let i = 0; i < 8; i++) {
-                this.dio((b >> i) & 1)
-                control.waitMicros(TM1640_DELAY)
-                this.clk(1)
-                control.waitMicros(TM1640_DELAY)
-                this.clk(0)
-                control.waitMicros(TM1640_DELAY)
+        private D(n:number){ pins.digitalWritePin(this.dio, n?1:0) }
+        private C(n:number){ pins.digitalWritePin(this.clk, n?1:0) }
+        private start(){ this.D(0); control.waitMicros(DEL); this.C(0); control.waitMicros(DEL) }
+        private stop(){ this.D(0); control.waitMicros(DEL); this.C(1); control.waitMicros(DEL); this.D(1); control.waitMicros(DEL) }
+        private byte(b:number){
+            for(let i=0;i<8;i++){
+                this.D((b>>i)&1); control.waitMicros(DEL)
+                this.C(1); control.waitMicros(DEL)
+                this.C(0); control.waitMicros(DEL)
             }
         }
-        private _write_data_cmd() {
-            this._start(); this._write_byte(TM1640_CMD1); this._stop()
+        private dataCmd(){ this.start(); this.byte(CMD1); this.stop() }
+        private dspCtrl(){ this.start(); this.byte(CMD3|DSP_ON|this.b); this.stop() }
+        write(rows:number[], pos:number=0){
+            this.dataCmd()
+            this.start(); this.byte(CMD2|pos)
+            for (let r of rows) this.byte(r&0xff)
+            this.stop(); this.dspCtrl()
         }
-        private _write_dsp_ctrl() {
-            this._start(); this._write_byte(TM1640_CMD3 | TM1640_DSP_ON | this._brightness); this._stop()
-        }
-        private write(rows: number[], pos: number = 0) {
-            if (pos < 0 || pos > 16) return
-            this._write_data_cmd()
-            this._start()
-            this._write_byte(TM1640_CMD2 | pos)
-            for (let r of rows) this._write_byte(r & 0xff)
-            this._stop()
-            this._write_dsp_ctrl()
-        }
-        private refresh() { this.write(this.gram, 0) }
-
-        // -------- Блоки как методы объекта --------
-
-        //% block="set brightness %value"
-        //% value.shadow="number" value.min=0 value.max=7 value.defl=5
-        //% weight=80
-        setBrightness(value: number) {
-            value = Math.max(0, Math.min(7, value | 0))
-            this._brightness = value
-            this._write_data_cmd()
-            this._write_dsp_ctrl()
-        }
-
-        //% block="show integer %num"
-        //% num.shadow="number"
-        //% weight=70
-        showInteger(num: number) {
-            let s = (Math.floor(num)).toString()
-            if (s.length > 4) s = s.slice(0, 4)
-            let buf: number[] = []
-            for (let ch of s) buf.push(font[ch] !== undefined ? font[ch] : 0x00)
-            while (buf.length < 4) buf.unshift(0x00)
-            for (let i = 0; i < 4; i++) this.gram[i] = buf[i]
-            this.refresh()
-        }
-
-        //% block="show number %num with 1 decimal"
-        //% num.shadow="number"
-        //% weight=65
-        showFloat1(num: number) {
-            let n10 = Math.round(num * 10)
-            let intPart = Math.idiv(n10, 10)
-            let fracPart = Math.abs(n10 % 10)
-            let s = intPart.toString() + "."
-                + fracPart.toString()
-            let buf: number[] = []
-            for (let i = 0; i < s.length; i++) {
-                let c = s.charAt(i)
-                if (c == ".") {
-                    if (buf.length > 0) buf[buf.length - 1] |= 0x80
-                } else {
-                    buf.push(font[c] !== undefined ? font[c] : 0x00)
-                }
-            }
-            while (buf.length < 4) buf.unshift(0x00)
-            buf = buf.slice(-4)
-            for (let i = 0; i < 4; i++) this.gram[i] = buf[i]
-            this.refresh()
-        }
+        setBrightness(v:number){ this.b = Math.min(7, Math.max(0, v|0)); this.dataCmd(); this.dspCtrl() }
     }
 
-    // -------- Простой режим: блоки без переменной --------
+    // singleton как у StartbitV2
+    let drv: Driver = null
 
+    // ---------- БЛОКИ ----------
     /**
-     * Создать/переинициализировать глобальный TM1640 для простых блоков
+     * Инициализировать TM1640 (CLK/DIO/яркость)
      */
+    //% blockId="tm1640_init"
     //% block="init TM1640 CLK %clk DIO %dio brightness %b"
-    //% clk.defl=DigitalPin.P1 dio.defl=DigitalPin.P2 b.shadow="number" b.min=0 b.max=7 b.defl=5
-    //% weight=90
+    //% group="Setup" weight=90 blockGap=8
+    //% clk.defl=DigitalPin.P1 dio.defl=DigitalPin.P2
+    //% b.shadow="number" b.min=0 b.max=7 b.defl=5
     export function init(clk: DigitalPin, dio: DigitalPin, b: number = 5) {
-        _disp = new Display(clk, dio, b)
-    }
-
-    //% block="TM1640 set brightness %value"
-    //% value.shadow="number" value.min=0 value.max=7 value.defl=5
-    //% weight=75
-    export function setBrightness(value: number) {
-        if (_disp) _disp.setBrightness(value)
-    }
-
-    //% block="TM1640 show integer %num"
-    //% num.shadow="number"
-    //% weight=70
-    export function showInteger(num: number) {
-        if (_disp) _disp.showInteger(num)
-    }
-
-    //% block="TM1640 show number %num with 1 decimal"
-    //% num.shadow="number"
-    //% weight=65
-    export function showFloat1(num: number) {
-        if (_disp) _disp.showFloat1(num)
+        drv = new Driver(clk, dio, b)
     }
 
     /**
-     * Создать новый объект и сохранить в переменную (объектный стиль)
+     * Установить яркость 0..7
      */
-    //% block="TM1640 on CLK %clk DIO %dio brightness %b"
-    //% clk.defl=DigitalPin.P1 dio.defl=DigitalPin.P2 b.shadow="number" b.min=0 b.max=7 b.defl=5
-    //% weight=88 blockSetVariable=tm1640
-    export function create(clk: DigitalPin, dio: DigitalPin, b: number = 5): Display {
-        let d = new Display(clk, dio, b)
-        _disp = d
-        return d
+    //% blockId="tm1640_brightness"
+    //% block="TM1640 set brightness %val"
+    //% group="Setup" weight=80 blockGap=12
+    //% val.shadow="number" val.min=0 val.max=7 val.defl=5
+    export function setBrightness(val: number) {
+        if (drv) drv.setBrightness(val)
+    }
+
+    /**
+     * Показать целое число (до 4 разрядов)
+     */
+    //% blockId="tm1640_showInt"
+    //% block="TM1640 show integer %num"
+    //% group="Display" weight=70 blockGap=8
+    //% num.shadow="number"
+    export function showInteger(num: number) {
+        if (!drv) return
+        num = Math.floor(num)
+        let s = num.toString()
+        if (s.length > 4) s = s.slice(0, 4)
+        let buf:number[]=[]
+        for (let i=0;i<s.length;i++) buf.push(FONT[s.charAt(i)] || 0)
+        while (buf.length<4) buf.unshift(0)
+        drv.write(buf.slice(0,4),0)
+    }
+
+    /**
+     * Показать число с 1 знаком после точки
+     */
+    //% blockId="tm1640_showFloat1"
+    //% block="TM1640 show number %num with 1 decimal"
+    //% group="Display" weight=60
+    //% num.shadow="number"
+    export function showFloat1(num: number) {
+        if (!drv) return
+        let n10 = Math.round(num * 10)
+        let ip = Math.idiv(n10, 10)
+        let fp = Math.abs(n10 % 10)
+        // собираем сегменты: ip + точка + fp
+        let s = ip.toString()
+        let segs:number[]=[]
+        for (let i=0;i<s.length;i++) segs.push(FONT[s.charAt(i)] || 0)
+        if (segs.length==0) segs.push(0)
+        segs[segs.length-1] |= 0x80
+        segs.push(FONT[fp.toString()] || 0)
+        while (segs.length<4) segs.unshift(0)
+        drv.write(segs.slice(-4),0)
     }
 }
