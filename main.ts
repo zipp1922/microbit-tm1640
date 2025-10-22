@@ -98,7 +98,7 @@ namespace tm1640 {
             this.refresh()
         }
 
-        //% block="show integer %num"
+        //% block="show float %num"
         //% num.shadow="number"
         //% weight=70
         showFloat1(num: number) {
